@@ -3,16 +3,21 @@ from pydantic import BaseModel
 from typing import List, Tuple
 import duckdb
 from .utils import get_sample_trajectories
-
-con = duckdb.connect(database='./dados.db')
+import pandas as pd
 
 # Create FastAPI instance
 app = FastAPI(title="Simple FastAPI Server", version="1.0.0")
 
 # Define a model for the ESP data
 class ESPData(BaseModel):
-    coordenadas: List[Tuple[float, float, float]]
+    coordenadas: List[Tuple[float, float, str]]
 
+# Global connection (will be overridden in tests)
+_default_con = duckdb.connect(database='./dados.db')
+
+def get_db():
+    """Dependency to get database connection"""
+    return getattr(app.state, 'con', _default_con)
 
 
 # Root endpoint
@@ -25,13 +30,17 @@ async def root(message):
     print(message)
     return {"message": "Hello World! FastAPI is running!"}
 
-@app.post("/esp/")
-async def recebe_mensagem_esp(data: ESPData):
-    for coord in data.coordenadas:
-        con.execute("""
-        INSERT INTO coordenadas (uid, latitude, longitude, timestamp) 
-        VALUES (1, ?, ?, ?)", (coord[0], coord[1], coord[2])
-    """)
+@app.post("/trajectories/")
+async def receive_trajectory_data(data: ESPData):
+    con = get_db()
+    df = pd.DataFrame(data.coordenadas, columns=['latitude', 'longitude', 'timestamp'])
+    df["uid"] = con.sql("SELECT COALESCE(MAX(uid), 0) + 2 FROM coordenadas").fetchone()[0]
+
+    print(df.head())
+
+    con.sql("""INSERT INTO coordenadas (uid, latitude, longitude, timestamp)
+             SELECT uid, latitude, longitude, timestamp FROM df""")
+
     return {"coordenadas": data.coordenadas}
 
 @app.get("/verify-coordinates/")

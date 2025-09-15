@@ -1,8 +1,13 @@
 import duckdb
 
-con = duckdb.connect(database='./dados/dados.db')
+con = duckdb.connect(database='./dados.db')
 
 con.execute("""
-CREATE TABLE IF NOT EXISTS 
-coordenadas (uid INTEGER PRIMARY KEY, latitude DOUBLE, longitude DOUBLE, timestamp TIMESTAMP)
+CREATE TABLE
+coordenadas (uid INTEGER, 
+            latitude DOUBLE, 
+            longitude DOUBLE, 
+            timestamp TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP 
+            )
 """)
