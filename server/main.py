@@ -2,9 +2,9 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Tuple
 import duckdb
-from utils import get_sample_trajectories
+from .utils import get_sample_trajectories
 
-con = duckdb.connect(database='./dados/dados.db')
+con = duckdb.connect(database='./dados.db')
 
 # Create FastAPI instance
 app = FastAPI(title="Simple FastAPI Server", version="1.0.0")
