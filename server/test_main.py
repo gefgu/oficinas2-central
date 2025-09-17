@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 import pytest
+
+from server.db_commands import create_tables
 from .main import app
 import pandas as pd
 import duckdb
@@ -14,33 +16,8 @@ client = TestClient(app)
 def test_db():
     test_con = duckdb.connect(database=":memory:")
 
-    test_con.sql(
-        """
-    CREATE TABLE
-    trajectory (uid INTEGER, 
-                latitude DOUBLE, 
-                longitude DOUBLE, 
-                timestamp TIMESTAMP,
-                trip_number INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-    """)
-
-    test_con.execute(
-        """
-    CREATE TABLE
-    visit (
-        uid INTEGER, 
-        trip_number INTEGER,
-        arrive_time TIMESTAMP,
-        depart_time TIMESTAMP,
-        latitude DOUBLE,
-        longitude DOUBLE,
-        purpose VARCHAR,
-        mode_of_transport VARCHAR,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP 
-    )
-    """)
+    # Create tables
+    create_tables(test_con)
 
     # Set the test connection globally
     set_test_db(test_con)
@@ -70,7 +47,7 @@ def test_trajectories_receive_endpoint(test_db):
     assert response.status_code == 200
 
     result = test_db.execute("SELECT COUNT(*) FROM trajectory").fetchone()[0]
-    print(result, len(sample_data))
+    # print(result, len(sample_data))
     assert result == len(sample_data)
 
     sample_row = test_db.execute(
@@ -82,4 +59,17 @@ def test_trajectories_receive_endpoint(test_db):
     number_of_visits = test_db.execute("SELECT COUNT(*) FROM visit").fetchone()[0]
     # print(f"Number of visits recorded: {number_of_visits}")
     assert number_of_visits == 5
-    assert 1 == 0
+    # assert 1 == 0
+
+    response = client.get("/trajectories/")
+    print(response)
+    assert response.status_code == 200
+    response_data = response.json()
+    assert len(response_data["visits"]) == number_of_visits
+    assert len(response_data["trajectory"]) == number_of_visits
+
+
+def test_not_getting_trajectories(test_db):
+    response = client.get("/trajectories/")
+    assert response.status_code == 200
+    assert response.json() == {"detail": "Not authorized"}

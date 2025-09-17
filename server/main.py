@@ -5,7 +5,7 @@ import duckdb
 # from .utils import get_sample_trajectories
 import pandas as pd
 from .server.database import get_db
-from .utils import handle_raw_trajectories
+from .utils import get_recent_trajectory_data, handle_raw_trajectories
 
 # Create FastAPI instance
 app = FastAPI(title="Simple FastAPI Server", version="1.0.0")
@@ -27,24 +27,19 @@ async def root(message):
 @app.post("/trajectories/")
 async def receive_trajectory_data(data: ESPData):
     handle_raw_trajectories(data.coordenadas)
-    
     return {"coordenadas": data.coordenadas}
 
-@app.get("/verify-coordinates/")
-async def verifica_coordenadas():
-    # result = con.execute("SELECT * FROM coordenadas").fetchall()
-    # result = get_sample_trajectories()
-    # return result
-    return {"message": "Verifica coordenadas!"}
-
-@app.get("/app/")
-async def esp_me_manda_mensagem(data: ESPData):
-
-    return {"message": "ESP me manda mensagem!", "coordenadas": data.coordenadas}
-
-@app.get("/app-envia/")
-async def esp_me_manda_mensagem(data: ESPData):
-    return {"message": "ESP me manda mensagem!", "dado": data.dado}
+@app.get("/trajectories/")
+async def get_trajectory_data():
+    visits_data, trajectory_data = get_recent_trajectory_data()
+    
+    if len(visits_data) < 1 or len(trajectory_data) < 1:
+        return {"detail": "Not authorized"}
+    
+    return {
+        "visits": visits_data,
+        "trajectory": trajectory_data
+    }
 
 if __name__ == "__main__":
     import uvicorn

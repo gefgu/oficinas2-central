@@ -227,3 +227,87 @@ def classify_visits(visits_df):
     visits_df = visits_df.drop(columns=['Bairro', 'HOUR', 'DAY_OF_WEEK'], errors='ignore')
     
     return visits_df
+
+
+def get_recent_trajectory_data():
+    con = get_db()
+    
+    # Get recent visits
+    recent_visits = con.sql("""
+        SELECT * FROM visit
+        WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '10 minutes'
+        AND validated = FALSE
+        ORDER BY created_at DESC
+    """)
+    
+    if recent_visits.df().empty:
+        return [], []
+    
+    visits_df = recent_visits.df()
+    
+    # Convert datetime columns to strings for JSON serialization
+    datetime_columns = ['arrive_time', 'depart_time', 'created_at']
+    for col in datetime_columns:
+        if col in visits_df.columns:
+            visits_df[col] = visits_df[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Get unique combinations of uid and trip_number from recent visits
+    uid_trip_combinations = visits_df[['uid', 'trip_number']].drop_duplicates()
+    
+    # Get corresponding trajectories for these visits
+    trajectories_data = []
+    
+    for _, row in uid_trip_combinations.iterrows():
+        uid = int(row['uid'])  # Convert to Python int
+        trip_number = int(row['trip_number'])  # Convert to Python int
+        
+        # Get trajectory points for this specific uid and trip_number
+        trajectory_query = con.sql(f"""
+            SELECT * FROM trajectory
+            WHERE uid = {uid} AND trip_number = {trip_number}
+            ORDER BY timestamp ASC
+        """)
+        
+        if not trajectory_query.df().empty:
+            trajectory_df = trajectory_query.df()
+            
+            # Convert timestamp column to string for JSON serialization
+            if 'timestamp' in trajectory_df.columns:
+                trajectory_df['timestamp'] = trajectory_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            if 'created_at' in trajectory_df.columns:
+                trajectory_df['created_at'] = trajectory_df['created_at'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Convert numeric columns to Python native types
+            numeric_columns = ['uid', 'trip_number', 'latitude', 'longitude']
+            for col in numeric_columns:
+                if col in trajectory_df.columns:
+                    if col in ['uid', 'trip_number']:
+                        trajectory_df[col] = trajectory_df[col].astype(int)
+                    else:
+                        trajectory_df[col] = trajectory_df[col].astype(float)
+            
+            # Convert to list of dictionaries for easier handling
+            trajectory_points = trajectory_df.to_dict('records')
+            
+            trajectories_data.append({
+                'uid': uid,
+                'trip_number': trip_number,
+                'trajectory_points': trajectory_points,
+                'point_count': len(trajectory_points)
+            })
+    
+    # Convert visits to list of dictionaries and handle numpy types
+    visits_data = visits_df.to_dict('records')
+    
+    # Convert numpy types to Python native types in visits_data
+    for visit in visits_data:
+        for key, value in visit.items():
+            if hasattr(value, 'item'):  # numpy scalar
+                visit[key] = value.item()
+            elif pd.isna(value):  # Handle NaN values
+                visit[key] = None
+    
+    print(f"Found {len(visits_data)} recent visits")
+    print(f"Found {len(trajectories_data)} corresponding trajectories")
+    
+    return visits_data, trajectories_data
