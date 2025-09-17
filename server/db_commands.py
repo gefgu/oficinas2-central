@@ -10,8 +10,7 @@ def create_tables(con):
         longitude DOUBLE, 
         timestamp TIMESTAMP,
         trip_number INTEGER,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        validated BOOLEAN DEFAULT FALSE
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
 

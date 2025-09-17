@@ -68,6 +68,48 @@ def test_trajectories_receive_endpoint(test_db):
     assert len(response_data["visits"]) == number_of_visits
     assert len(response_data["trajectory"]) == number_of_visits
 
+    purpose_list = [
+        "HOME",
+        "WORK",
+        "LEISURE",
+        "SHOPPING",
+        "OTHER",
+    ]
+    mode_list = [
+        "WALK",
+        "CAR",
+        "BUS",
+        "OTHER",
+    ]
+    for i, visit in enumerate(response_data["visits"]):
+        visit["purpose"] = purpose_list[i % len(purpose_list)]
+        visit["mode_of_transport"] = mode_list[i % len(mode_list)]
+
+    response = client.put("/trajectories/", json={"visits": response_data["visits"]})
+    assert response.status_code == 200
+    assert response.json() == {"message": "Trajectory data updated successfully"}
+
+    # Use .df() to get a DataFrame that can be converted to dictionaries
+    validated_trips_df = test_db.sql("""
+        SELECT * FROM visit WHERE validated = TRUE
+        ORDER BY trip_number
+    """).df()
+    
+    # Convert to list of dictionaries
+    validated_trips = validated_trips_df.to_dict('records')
+    
+    assert len(validated_trips) == number_of_visits
+    assert validated_trips[0]["purpose"] == "HOME"
+    assert validated_trips[0]["mode_of_transport"] == "WALK"
+    assert validated_trips[1]["purpose"] == "WORK"
+    assert validated_trips[1]["mode_of_transport"] == "CAR"
+    assert validated_trips[2]["purpose"] == "LEISURE"
+    assert validated_trips[2]["mode_of_transport"] == "BUS"
+    assert validated_trips[3]["purpose"] == "SHOPPING"
+    assert validated_trips[3]["mode_of_transport"] == "OTHER"
+    assert validated_trips[4]["purpose"] == "OTHER"
+    assert validated_trips[4]["mode_of_transport"] == "WALK"
+
 
 def test_not_getting_trajectories(test_db):
     response = client.get("/trajectories/")
