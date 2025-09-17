@@ -7,6 +7,11 @@ import pandas as pd
 # from .data import sample_trajectories
 import json
 import math
+import geopandas as gpd
+import pickle
+import joblib
+from shapely.geometry import Point
+
 
 # def get_sample_trajectories():
     # return json.dumps(sample_trajectories)
@@ -117,6 +122,7 @@ def handle_raw_trajectories(coordenadas):
     # Insert visits into database
     if visits_data:
         visits_df = pd.DataFrame(visits_data)
+        visits_df = classify_visits(visits_df)
         con.sql("""INSERT INTO visit (uid, trip_number, arrive_time, depart_time, latitude, longitude, purpose, mode_of_transport)
                  SELECT uid, trip_number, arrive_time, depart_time, latitude, longitude, purpose, mode_of_transport FROM visits_df""")
     
@@ -131,3 +137,93 @@ def handle_raw_trajectories(coordenadas):
     print(f"Processed {len(trajectories_data)} trajectory points")
     print(f"Detected {len(visits_data)} visits")
     print(f"Total trips: {trip_number}")
+
+
+def classify_visits(visits_df):
+    if visits_df.empty:
+        return visits_df
+    
+    # Load the neighborhood boundaries
+    gdf = gpd.read_file("../dados/bairros_curitiba.zip")
+    
+    # Load the trained model and encoders
+    try:
+        model = joblib.load("../modelos/lgb_purpose_model.pkl")
+        with open("../modelos/lgb_purpose_encoders.pkl", 'rb') as f:
+            encoders = pickle.load(f)
+        
+        le_bairro = encoders['le_bairro']
+        le_purpose = encoders['le_purpose']
+        
+    except FileNotFoundError as e:
+        print(f"Model files not found: {e}")
+        # Fallback to default values
+        visits_df['mode_of_transport'] = 'CAR'
+        visits_df['purpose'] = 'WORK'
+        return visits_df
+    
+    # Create GeoDataFrame from visits
+    visits_gdf = gpd.GeoDataFrame(
+        visits_df, 
+        geometry=[Point(row.longitude, row.latitude) for _, row in visits_df.iterrows()],
+        crs='EPSG:4326'
+    )
+    
+    # Ensure both have the same CRS
+    if gdf.crs != visits_gdf.crs:
+        gdf = gdf.to_crs(visits_gdf.crs)
+    
+    # Spatial join to get neighborhood (bairro)
+    visits_with_bairro = gpd.sjoin(visits_gdf, gdf, how='left', predicate='within')
+    
+    # Get the neighborhood column name (adjust based on your shapefile)
+    # Common column names: 'NOME', 'nome', 'bairro', 'Bairro'
+    bairro_column = "NOME"
+    visits_df['Bairro'] = visits_with_bairro[bairro_column].fillna('Unknown')
+    
+    # Extract time features from arrive_time
+    visits_df['arrive_time'] = pd.to_datetime(visits_df['arrive_time'])
+    visits_df['HOUR'] = visits_df['arrive_time'].dt.hour
+    visits_df['DAY_OF_WEEK'] = visits_df['arrive_time'].dt.dayofweek
+    
+    # Prepare features for prediction
+    X_features = visits_df[['Bairro', 'HOUR', 'DAY_OF_WEEK']].copy()
+    
+    # Handle unknown neighborhoods
+    known_bairros = set(le_bairro.classes_)
+    X_features['Bairro'] = X_features['Bairro'].apply(
+        lambda x: x if x in known_bairros else 'Unknown'
+    )
+    
+    # If 'Unknown' is not in the original training set, map to most common bairro
+    if 'Unknown' not in known_bairros:
+        # Get the most frequent bairro from training (first class in encoder)
+        most_common_bairro = le_bairro.classes_[0]
+        X_features['Bairro'] = X_features['Bairro'].replace('Unknown', most_common_bairro)
+    
+    # Encode features
+    try:
+        X_encoded = X_features.copy()
+        X_encoded['Bairro'] = le_bairro.transform(X_features['Bairro'])
+        
+        # Make predictions
+        y_pred_encoded = model.predict(X_encoded)
+        
+        # Decode predictions back to purpose labels
+        visits_df['purpose'] = le_purpose.inverse_transform(y_pred_encoded)
+        
+        print(f"Successfully classified {len(visits_df)} visits")
+        print(f"Purpose distribution: {visits_df['purpose'].value_counts().to_dict()}")
+        
+    except Exception as e:
+        print(f"Error during prediction: {e}")
+        # Fallback to default purpose
+        visits_df['purpose'] = 'OTHER'
+    
+    # Set mode of transport (you can improve this later with additional models)
+    visits_df['mode_of_transport'] = 'CAR'
+    
+    # Drop temporary columns if you don't want to keep them
+    visits_df = visits_df.drop(columns=['Bairro', 'HOUR', 'DAY_OF_WEEK'], errors='ignore')
+    
+    return visits_df

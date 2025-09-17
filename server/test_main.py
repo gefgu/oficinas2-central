@@ -82,3 +82,4 @@ def test_trajectories_receive_endpoint(test_db):
     number_of_visits = test_db.execute("SELECT COUNT(*) FROM visit").fetchone()[0]
     # print(f"Number of visits recorded: {number_of_visits}")
     assert number_of_visits == 5
+    assert 1 == 0
