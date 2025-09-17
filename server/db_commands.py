@@ -31,5 +31,5 @@ def create_tables(con):
     """)
 
 if __name__ == "__main__":
-    con = duckdb.connect(database='./dados.db')
+    con = duckdb.connect(database='./dados_test.db')
     create_tables(con)

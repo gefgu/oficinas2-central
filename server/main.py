@@ -2,10 +2,15 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Tuple
 import duckdb
-# from .utils import get_sample_trajectories
 import pandas as pd
-from .server.database import get_db
-from .utils import get_recent_trajectory_data, handle_raw_trajectories, update_visit_data
+
+# When running as module vs directly
+try:
+    from .server.database import get_db
+    from .utils import get_recent_trajectory_data, handle_raw_trajectories, update_visit_data
+except ImportError:
+    from server.database import get_db
+    from utils import get_recent_trajectory_data, handle_raw_trajectories, update_visit_data
 
 # Create FastAPI instance
 app = FastAPI(title="Simple FastAPI Server", version="1.0.0")

@@ -2,8 +2,13 @@ import time
 import requests
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
-from .main import get_db
 import pandas as pd
+
+# When running as module vs directly
+try:
+    from .server.database import get_db
+except ImportError:
+    from server.database import get_db
 
 # from .data import sample_trajectories
 import json
