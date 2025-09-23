@@ -2,3 +2,4 @@
 **/dados/geolife/*
 **/fastapi_env/*
 **/notebooks/cache/*
+*.db

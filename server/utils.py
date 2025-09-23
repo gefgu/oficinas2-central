@@ -16,7 +16,8 @@ import math
 import geopandas as gpd
 import pickle
 import joblib
-from shapely.geometry import Point
+from shapely.geometry import Point, Polygon
+import random
 
 
 # def get_sample_trajectories():
@@ -39,6 +40,99 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     return R * c
+
+
+def load_h3_hexagons():
+    """Load H3 hexagons from the GeoJSON file"""
+    try:
+        h3_gdf = gpd.read_file("../dados/Curitiba_resolution_10.geojson")
+        return h3_gdf
+    except FileNotFoundError:
+        print("H3 hexagons file not found at ../dados/Curitiba_resolution_10.geojson")
+        return None
+
+
+def anonymize_trajectories(trajectories_data, visits_data):
+    """
+    Anonymize trajectory data by replacing points with random locations within H3 hexagons.
+    Points that fall within the same H3 hexagon as visit locations are randomized within that hexagon.
+    """
+    if not trajectories_data or not visits_data:
+        return trajectories_data
+
+    # Load H3 hexagons
+    h3_gdf = load_h3_hexagons()
+    if h3_gdf is None:
+        print("Could not load H3 hexagons, returning original trajectories")
+        return trajectories_data
+
+    # Find hexagons that contain visit locations
+    visit_hexagons = set()
+    for visit in visits_data:
+        visit_point = Point(visit["longitude"], visit["latitude"])
+        # Find which hexagon contains this visit
+        for idx, row in h3_gdf.iterrows():
+            if row.geometry.contains(visit_point):
+                visit_hexagons.add(idx)
+                break
+
+    print(f"Found {len(visit_hexagons)} hexagons containing visits")
+
+    # Process each trajectory point
+    anonymized_trajectories = []
+    anonymized_count = 0
+
+    for trajectory in trajectories_data:
+        lat, lon = trajectory["latitude"], trajectory["longitude"]
+        traj_point = Point(lon, lat)
+
+        # Check if this point is in a hexagon that contains visits
+        point_anonymized = False
+        for hex_idx in visit_hexagons:
+            hex_geometry = h3_gdf.iloc[hex_idx].geometry
+            if hex_geometry.contains(traj_point):
+                # Generate random point within this hexagon
+                new_lat, new_lon = generate_random_point_in_polygon(hex_geometry)
+
+                # Create anonymized trajectory point
+                anonymized_trajectory = trajectory.copy()
+                anonymized_trajectory["latitude"] = new_lat
+                anonymized_trajectory["longitude"] = new_lon
+                anonymized_trajectories.append(anonymized_trajectory)
+                anonymized_count += 1
+                point_anonymized = True
+                break
+
+        if not point_anonymized:
+            # Keep original point if not in a visit hexagon
+            anonymized_trajectories.append(trajectory)
+
+    print(f"Anonymized {anonymized_count} out of {len(trajectories_data)} trajectory points")
+    return anonymized_trajectories
+
+
+def generate_random_point_in_polygon(polygon_geometry):
+    """
+    Generate a random point within a polygon geometry.
+    Uses bounding box approach with rejection sampling.
+    """
+    # Get bounding box
+    bounds = polygon_geometry.bounds
+    min_lon, min_lat, max_lon, max_lat = bounds
+
+    # Generate random point within bounding box that falls inside polygon
+    max_attempts = 100
+    for _ in range(max_attempts):
+        random_lat = random.uniform(min_lat, max_lat)
+        random_lon = random.uniform(min_lon, max_lon)
+        point = Point(random_lon, random_lat)
+
+        if polygon_geometry.contains(point):
+            return random_lat, random_lon
+
+    # Fallback to centroid if no valid point found
+    centroid = polygon_geometry.centroid
+    return centroid.y, centroid.x
 
 
 def handle_raw_trajectories(coordenadas):
@@ -138,6 +232,9 @@ def handle_raw_trajectories(coordenadas):
                 }
             )
 
+    # Anonymize trajectories before inserting into database
+    anonymized_trajectories = anonymize_trajectories(trajectories_data, visits_data)
+
     # Insert visits into database
     if visits_data:
         visits_df = pd.DataFrame(visits_data)
@@ -147,9 +244,9 @@ def handle_raw_trajectories(coordenadas):
                  SELECT uid, trip_number, arrive_time, depart_time, latitude, longitude, purpose, mode_of_transport FROM visits_df"""
         )
 
-    # Insert trajectories into database
-    if trajectories_data:
-        trajectories_df = pd.DataFrame(trajectories_data)
+    # Insert anonymized trajectories into database
+    if anonymized_trajectories:
+        trajectories_df = pd.DataFrame(anonymized_trajectories)
         con.sql(
             """INSERT INTO trajectory (uid, latitude, longitude, timestamp, trip_number)
                  SELECT uid, latitude, longitude, timestamp, trip_number FROM trajectories_df"""
@@ -157,7 +254,7 @@ def handle_raw_trajectories(coordenadas):
         number_of_inserted = con.sql(
             f"SELECT COUNT(*) FROM trajectory WHERE uid = {uid}"
         ).fetchone()[0]
-        print(f"Inserted {number_of_inserted} trajectory points for uid {uid}")
+        print(f"Inserted {number_of_inserted} anonymized trajectory points for uid {uid}")
 
     print(f"Processed {len(trajectories_data)} trajectory points")
     print(f"Detected {len(visits_data)} visits")
