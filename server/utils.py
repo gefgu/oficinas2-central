@@ -53,6 +53,7 @@ def load_h3_hexagons():
 
 
 def anonymize_trajectories(trajectories_data, visits_data):
+    return trajectories_data
     """
     Anonymize trajectory data by replacing points with random locations within H3 hexagons.
     Points that fall within the same H3 hexagon as visit locations are randomized within that hexagon.
@@ -107,7 +108,9 @@ def anonymize_trajectories(trajectories_data, visits_data):
             # Keep original point if not in a visit hexagon
             anonymized_trajectories.append(trajectory)
 
-    print(f"Anonymized {anonymized_count} out of {len(trajectories_data)} trajectory points")
+    print(
+        f"Anonymized {anonymized_count} out of {len(trajectories_data)} trajectory points"
+    )
     return anonymized_trajectories
 
 
@@ -135,102 +138,129 @@ def generate_random_point_in_polygon(polygon_geometry):
     return centroid.y, centroid.x
 
 
+def detect_visits_from_trajectory(coordenadas, uid, min_duration_minutes=10, movement_threshold_meters=300):
+    """
+    Detect visits from a trajectory based on staying at locations for a minimum duration.
+    
+    Args:
+        coordenadas: List of (lat, lon, timestamp) tuples
+        uid: User identifier
+        min_duration_minutes: Minimum time to spend at a location to be considered a visit
+        movement_threshold_meters: Distance threshold to consider as movement
+    
+    Returns:
+        Tuple of (visits_data, trajectories_data)
+    """
+    if not coordenadas:
+        return [], []
+    
+    visits_data = []
+    trajectories_data = []
+    trip_number = 1
+    
+    # Track visit state
+    current_visit_start = None
+    current_visit_location = None
+    current_visit_coords = []  # Store all coordinates during current visit
+    
+    for i, (lat, lon, timestamp) in enumerate(coordenadas):
+        # Convert timestamp if it's a string
+        if isinstance(timestamp, str):
+            timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        
+        # Check if user moved significantly from current visit location
+        moved = False
+        if current_visit_location:
+            distance = calculate_distance(
+                lat, lon, current_visit_location[0], current_visit_location[1]
+            )
+            moved = distance > movement_threshold_meters
+        
+        if moved:
+            # User moved - close current visit if it meets duration requirement
+            if current_visit_start and current_visit_location:
+                visit_duration = timestamp - current_visit_start
+                if visit_duration >= timedelta(minutes=min_duration_minutes):
+                    # Calculate average location during the visit
+                    avg_lat = sum(coord[0] for coord in current_visit_coords) / len(current_visit_coords)
+                    avg_lon = sum(coord[1] for coord in current_visit_coords) / len(current_visit_coords)
+                    
+                    visits_data.append({
+                        "uid": uid,
+                        "trip_number": trip_number,
+                        "arrive_time": current_visit_start,
+                        "depart_time": timestamp,
+                        "latitude": avg_lat,
+                        "longitude": avg_lon,
+                        "purpose": None,
+                        "mode_of_transport": None,
+                    })
+                    
+                    # Increment trip number for next trip
+                    trip_number += 1
+            
+            # Reset visit tracking since user is moving
+            current_visit_start = None
+            current_visit_location = None
+            current_visit_coords = []
+        
+        else:
+            # User didn't move significantly - start/continue visit
+            if not current_visit_start:
+                current_visit_start = timestamp
+                current_visit_location = (lat, lon)
+                current_visit_coords = [(lat, lon)]
+            else:
+                # Add to current visit coordinates
+                current_visit_coords.append((lat, lon))
+        
+        # Add all points to trajectory data with current trip number
+        trajectories_data.append({
+            "uid": uid,
+            "latitude": lat,
+            "longitude": lon,
+            "timestamp": timestamp,
+            "trip_number": trip_number,
+        })
+    
+    # Handle final visit if trajectory ends during a stay
+    if current_visit_start and current_visit_location and current_visit_coords:
+        final_timestamp = coordenadas[-1][2]
+        if isinstance(final_timestamp, str):
+            final_timestamp = datetime.fromisoformat(
+                final_timestamp.replace("Z", "+00:00")
+            )
+        
+        visit_duration = final_timestamp - current_visit_start
+        if visit_duration >= timedelta(minutes=min_duration_minutes):
+            # Calculate average location during the visit
+            avg_lat = sum(coord[0] for coord in current_visit_coords) / len(current_visit_coords)
+            avg_lon = sum(coord[1] for coord in current_visit_coords) / len(current_visit_coords)
+            
+            visits_data.append({
+                "uid": uid,
+                "trip_number": trip_number,
+                "arrive_time": current_visit_start,
+                "depart_time": final_timestamp,
+                "latitude": avg_lat,
+                "longitude": avg_lon,
+                "purpose": None,
+                "mode_of_transport": None,
+            })
+    
+    return visits_data, trajectories_data
+
 def handle_raw_trajectories(coordenadas):
     con = get_db()
 
     # Get next available uid from trajectory table instead of coordenadas
     uid = con.sql("SELECT COALESCE(MAX(uid), 0) + 1 FROM trajectory").fetchone()[0]
 
-    trajectories_data = []
-    visits_data = []
-    trip_number = 1
-
     if not coordenadas:
         return
 
-    # Track visit state
-    current_visit_start = None
-    current_visit_location = None
-
-    for i, (lat, lon, timestamp) in enumerate(coordenadas):
-        # Convert timestamp if it's a string
-        if isinstance(timestamp, str):
-            timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-
-        # Check if user moved significantly from current visit location
-        moved = False
-        # print(f"Processing point {i+1}/{len(coordenadas)}: ({lat}, {lon}) at {timestamp}")
-        if current_visit_location:
-            distance = calculate_distance(
-                lat, lon, current_visit_location[0], current_visit_location[1]
-            )
-            moved = distance > 500  # 500 meters threshold
-
-        if moved:
-            # User moved - check if we should close the current visit
-            if current_visit_start and current_visit_location:
-                visit_duration = timestamp - current_visit_start
-                if visit_duration >= timedelta(minutes=10):
-                    # Create visit record for the location we just left
-                    visits_data.append(
-                        {
-                            "uid": uid,
-                            "trip_number": trip_number,
-                            "arrive_time": current_visit_start,
-                            "depart_time": timestamp,
-                            "latitude": current_visit_location[0],
-                            "longitude": current_visit_location[1],
-                            "purpose": None,
-                            "mode_of_transport": None,
-                        }
-                    )
-
-                    # Increment trip number for next trip
-                    trip_number += 1
-
-            # Reset visit tracking since user is moving
-            current_visit_start = None
-            current_visit_location = None
-
-        else:
-            # User didn't move significantly - start/continue visit
-            if not current_visit_start:
-                current_visit_start = timestamp
-                current_visit_location = (lat, lon)
-
-        # Add all points to trajectory data with current trip number
-        trajectories_data.append(
-            {
-                "uid": uid,
-                "latitude": lat,
-                "longitude": lon,
-                "timestamp": timestamp,
-                "trip_number": trip_number,
-            }
-        )
-
-    # Handle final visit if trajectory ends during a stay
-    if current_visit_start and current_visit_location and len(coordenadas) > 0:
-        final_timestamp = coordenadas[-1][2]
-        if isinstance(final_timestamp, str):
-            final_timestamp = datetime.fromisoformat(
-                final_timestamp.replace("Z", "+00:00")
-            )
-
-        visit_duration = final_timestamp - current_visit_start
-        if visit_duration >= timedelta(minutes=10):
-            visits_data.append(
-                {
-                    "uid": uid,
-                    "trip_number": trip_number,
-                    "arrive_time": current_visit_start,
-                    "depart_time": final_timestamp,
-                    "latitude": current_visit_location[0],
-                    "longitude": current_visit_location[1],
-                    "purpose": None,
-                    "mode_of_transport": None,
-                }
-            )
+    # Use the new visit detection function
+    visits_data, trajectories_data = detect_visits_from_trajectory(coordenadas, uid)
 
     # Anonymize trajectories before inserting into database
     anonymized_trajectories = anonymize_trajectories(trajectories_data, visits_data)
@@ -254,11 +284,15 @@ def handle_raw_trajectories(coordenadas):
         number_of_inserted = con.sql(
             f"SELECT COUNT(*) FROM trajectory WHERE uid = {uid}"
         ).fetchone()[0]
-        print(f"Inserted {number_of_inserted} anonymized trajectory points for uid {uid}")
+        print(
+            f"Inserted {number_of_inserted} anonymized trajectory points for uid {uid}"
+        )
 
     print(f"Processed {len(trajectories_data)} trajectory points")
     print(f"Detected {len(visits_data)} visits")
-    print(f"Total trips: {trip_number}")
+    if visits_data:
+        max_trip = max(visit['trip_number'] for visit in visits_data)
+        print(f"Total trips: {max_trip}")
 
 
 def classify_visits(visits_df):
@@ -456,7 +490,7 @@ def update_visit_data(dados):
 
     for visit in dados.visits:
         con.sql(
-        f"""
+            f"""
         UPDATE visit
         SET purpose = '{visit.purpose}', 
         mode_of_transport = '{visit.mode_of_transport}', 

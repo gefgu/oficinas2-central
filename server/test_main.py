@@ -36,7 +36,7 @@ def test_read_server_running():
 
 
 def test_trajectories_receive_endpoint(test_db):
-    sample_df = pd.read_csv("../dados/sample_detailed_trajectory_user_53308444_2.csv")
+    sample_df = pd.read_csv("../dados/sample_detailed_trajectory_user_5896225_2014-05-19.csv")
     sample_data = sample_df[["lat", "lon", "timestamp"]].values.tolist()
     # print(sample_data)
 
