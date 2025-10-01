@@ -4,6 +4,8 @@ from typing import List, Dict, Any
 from datetime import datetime, timedelta
 import pandas as pd
 
+from server.transport_mode_model import predict_transport_mode
+
 # When running as module vs directly
 try:
     from .server.database import get_db
@@ -76,12 +78,14 @@ def anonymize_trajectories(trajectories_data, visits_data):
     # Create GeoDataFrame for visits
     visits_gdf = gpd.GeoDataFrame(
         visits_data,
-        geometry=[Point(visit["longitude"], visit["latitude"]) for visit in visits_data],
-        crs="EPSG:4326"
+        geometry=[
+            Point(visit["longitude"], visit["latitude"]) for visit in visits_data
+        ],
+        crs="EPSG:4326",
     )
 
     # Find hexagons that contain visit locations using spatial join
-    visit_hexagons_gdf = gpd.sjoin(visits_gdf, h3_gdf, how='inner', predicate='within')
+    visit_hexagons_gdf = gpd.sjoin(visits_gdf, h3_gdf, how="inner", predicate="within")
     visit_hexagon_indices = set(visit_hexagons_gdf.index_right.unique())
 
     print(f"Found {len(visit_hexagon_indices)} hexagons containing visits")
@@ -93,8 +97,10 @@ def anonymize_trajectories(trajectories_data, visits_data):
     # Create GeoDataFrame for trajectory points
     trajectory_gdf = gpd.GeoDataFrame(
         trajectories_data,
-        geometry=[Point(traj["longitude"], traj["latitude"]) for traj in trajectories_data],
-        crs="EPSG:4326"
+        geometry=[
+            Point(traj["longitude"], traj["latitude"]) for traj in trajectories_data
+        ],
+        crs="EPSG:4326",
     )
 
     # Get only the hexagons that contain visits for efficiency
@@ -102,10 +108,7 @@ def anonymize_trajectories(trajectories_data, visits_data):
 
     # Use spatial join to find which trajectory points are in visit hexagons
     trajectory_in_visit_hexagons = gpd.sjoin(
-        trajectory_gdf, 
-        visit_hexagons_subset, 
-        how='left', 
-        predicate='within'
+        trajectory_gdf, visit_hexagons_subset, how="left", predicate="within"
     )
 
     # Group trajectory points by visit_number to handle each visit separately
@@ -124,21 +127,25 @@ def anonymize_trajectories(trajectories_data, visits_data):
 
     for i, trajectory in enumerate(trajectories_data):
         # Check if this trajectory point is in a visit hexagon
-        if pd.notna(trajectory_in_visit_hexagons.iloc[i]['index_right']):
+        if pd.notna(trajectory_in_visit_hexagons.iloc[i]["index_right"]):
             visit_num = trajectory.get("visit_number")
-            
+
             # Determine if this point should be kept (first 30 or last 30 of the visit)
             should_keep = False
             if visit_num is not None and visit_num in visit_groups:
                 visit_points = visit_groups[visit_num]
                 total_points = len(visit_points)
-                
+
                 # Find position of current point in this visit's sequence
                 position_in_visit = next(
-                    (idx for idx, (orig_idx, _) in enumerate(visit_points) if orig_idx == i),
-                    None
+                    (
+                        idx
+                        for idx, (orig_idx, _) in enumerate(visit_points)
+                        if orig_idx == i
+                    ),
+                    None,
                 )
-                
+
                 if position_in_visit is not None:
                     # Keep first 30 or last 30 points
                     if position_in_visit < 30 or position_in_visit >= total_points - 30:
@@ -146,7 +153,7 @@ def anonymize_trajectories(trajectories_data, visits_data):
 
             if should_keep:
                 # This point is in a visit hexagon and within first/last 30 - anonymize it
-                hex_idx = int(trajectory_in_visit_hexagons.iloc[i]['index_right'])
+                hex_idx = int(trajectory_in_visit_hexagons.iloc[i]["index_right"])
                 hex_geometry = h3_gdf.iloc[hex_idx].geometry
 
                 # Generate random point within this hexagon
@@ -165,7 +172,9 @@ def anonymize_trajectories(trajectories_data, visits_data):
             # Keep original point if not in a visit hexagon (movement between visits)
             anonymized_trajectories.append(trajectory)
 
-    print(f"Anonymized {anonymized_count} out of {len(trajectories_data)} trajectory points")
+    print(
+        f"Anonymized {anonymized_count} out of {len(trajectories_data)} trajectory points"
+    )
     print(f"Skipped {skipped_middle_count} middle points from visits")
     print(f"Kept {len(anonymized_trajectories)} total trajectory points")
     return anonymized_trajectories
@@ -191,48 +200,52 @@ def generate_random_point_in_polygon(polygon_geometry):
             return random_lat, random_lon
 
     # Fallback to centroid if no valid point found
-    print(f"Warning: Could not find random point in polygon after {max_attempts} attempts, using centroid")
+    print(
+        f"Warning: Could not find random point in polygon after {max_attempts} attempts, using centroid"
+    )
     centroid = polygon_geometry.centroid
     return centroid.y, centroid.x
 
 
-def detect_visits_from_trajectory(coordenadas, uid, min_duration_minutes=10, movement_threshold_meters=300):
+def detect_visits_from_trajectory(
+    coordenadas, uid, min_duration_minutes=10, movement_threshold_meters=300
+):
     """
     Detect visits from a trajectory based on staying at locations for a minimum duration.
-    
+
     Logic:
     - If trajectory starts with a stay → Visit 1 (no trip number yet)
     - Movement between visits → Trip N (from Visit N to Visit N+1)
     - If trajectory ends with a stay → Final Visit
-    
+
     Args:
         coordenadas: List of (lat, lon, timestamp) tuples
         uid: User identifier
         min_duration_minutes: Minimum time to spend at a location to be considered a visit
         movement_threshold_meters: Distance threshold to consider as movement
-    
+
     Returns:
         Tuple of (visits_data, trajectories_data)
     """
     if not coordenadas:
         return [], []
-    
+
     visits_data = []
     trajectories_data = []
     visit_number = 1
     current_trip_number = None  # No trip until we start moving between visits
-    
+
     # Track visit state
     current_visit_start = None
     current_visit_location = None
     current_visit_coords = []
     in_visit = False
-    
+
     for i, (lat, lon, timestamp) in enumerate(coordenadas):
         # Convert timestamp if it's a string
         if isinstance(timestamp, str):
             timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-        
+
         # Check if user moved significantly from current visit location
         moved = False
         if current_visit_location:
@@ -240,58 +253,66 @@ def detect_visits_from_trajectory(coordenadas, uid, min_duration_minutes=10, mov
                 lat, lon, current_visit_location[0], current_visit_location[1]
             )
             moved = distance > movement_threshold_meters
-        
+
         if moved and in_visit:
             # User moved - close current visit if it meets duration requirement
             if current_visit_start and current_visit_location:
                 visit_duration = timestamp - current_visit_start
                 if visit_duration >= timedelta(minutes=min_duration_minutes):
                     # Calculate average location during the visit
-                    avg_lat = sum(coord[0] for coord in current_visit_coords) / len(current_visit_coords)
-                    avg_lon = sum(coord[1] for coord in current_visit_coords) / len(current_visit_coords)
-                    
-                    visits_data.append({
-                        "uid": uid,
-                        "visit_number": visit_number,
-                        "arrive_time": current_visit_start,
-                        "depart_time": timestamp,
-                        "latitude": avg_lat,
-                        "longitude": avg_lon,
-                        "purpose": None,
-                        "mode_of_transport": None,
-                    })
-                    
+                    avg_lat = sum(coord[0] for coord in current_visit_coords) / len(
+                        current_visit_coords
+                    )
+                    avg_lon = sum(coord[1] for coord in current_visit_coords) / len(
+                        current_visit_coords
+                    )
+
+                    visits_data.append(
+                        {
+                            "uid": uid,
+                            "visit_number": visit_number,
+                            "arrive_time": current_visit_start,
+                            "depart_time": timestamp,
+                            "latitude": avg_lat,
+                            "longitude": avg_lon,
+                            "purpose": None,
+                            "mode_of_transport": None,
+                        }
+                    )
+
                     visit_number += 1
-            
+
             # Reset visit tracking and start trip
             current_visit_start = None
             current_visit_location = None
             current_visit_coords = []
             in_visit = False
             current_trip_number = visit_number  # Trip TO the next visit
-        
+
         elif not moved and not in_visit:
             # User stopped moving - start potential visit
             current_visit_start = timestamp
             current_visit_location = (lat, lon)
             current_visit_coords = [(lat, lon)]
             in_visit = True
-            
+
         elif not moved and in_visit:
             # Continue current visit
             current_visit_coords.append((lat, lon))
-        
+
         # Add trajectory point with appropriate trip number
         # Points during visits get None, points during movement get trip number
-        trajectories_data.append({
-            "uid": uid,
-            "latitude": lat,
-            "longitude": lon,
-            "timestamp": timestamp,
-            "trip_number": current_trip_number if not in_visit else None,
-            "visit_number": visit_number if in_visit else None,
-        })
-    
+        trajectories_data.append(
+            {
+                "uid": uid,
+                "latitude": lat,
+                "longitude": lon,
+                "timestamp": timestamp,
+                "trip_number": current_trip_number if not in_visit else None,
+                "visit_number": visit_number if in_visit else None,
+            }
+        )
+
     # Handle final visit if trajectory ends during a stay
     if current_visit_start and current_visit_location and current_visit_coords:
         final_timestamp = coordenadas[-1][2]
@@ -299,25 +320,32 @@ def detect_visits_from_trajectory(coordenadas, uid, min_duration_minutes=10, mov
             final_timestamp = datetime.fromisoformat(
                 final_timestamp.replace("Z", "+00:00")
             )
-        
+
         visit_duration = final_timestamp - current_visit_start
         if visit_duration >= timedelta(minutes=min_duration_minutes):
             # Calculate average location during the visit
-            avg_lat = sum(coord[0] for coord in current_visit_coords) / len(current_visit_coords)
-            avg_lon = sum(coord[1] for coord in current_visit_coords) / len(current_visit_coords)
-            
-            visits_data.append({
-                "uid": uid,
-                "visit_number": visit_number,
-                "arrive_time": current_visit_start,
-                "depart_time": final_timestamp,
-                "latitude": avg_lat,
-                "longitude": avg_lon,
-                "purpose": None,
-                "mode_of_transport": None,
-            })
-    
+            avg_lat = sum(coord[0] for coord in current_visit_coords) / len(
+                current_visit_coords
+            )
+            avg_lon = sum(coord[1] for coord in current_visit_coords) / len(
+                current_visit_coords
+            )
+
+            visits_data.append(
+                {
+                    "uid": uid,
+                    "visit_number": visit_number,
+                    "arrive_time": current_visit_start,
+                    "depart_time": final_timestamp,
+                    "latitude": avg_lat,
+                    "longitude": avg_lon,
+                    "purpose": None,
+                    "mode_of_transport": None,
+                }
+            )
+
     return visits_data, trajectories_data
+
 
 def handle_raw_trajectories(coordenadas):
     con = get_db()
@@ -333,19 +361,23 @@ def handle_raw_trajectories(coordenadas):
 
     # Anonymize trajectories before inserting into database
     anonymized_trajectories = anonymize_trajectories(trajectories_data, visits_data)
+    trajectories_df = (
+        pd.DataFrame(anonymized_trajectories)
+        if anonymized_trajectories
+        else pd.DataFrame()
+    )
 
     # Insert visits into database
     if visits_data:
         visits_df = pd.DataFrame(visits_data)
-        visits_df = classify_visits(visits_df)
+        visits_df = classify_visits(visits_df, trajectories_df)
         con.sql(
             """INSERT INTO visit (uid, visit_number, arrive_time, depart_time, latitude, longitude, purpose, mode_of_transport)
                  SELECT uid, visit_number, arrive_time, depart_time, latitude, longitude, purpose, mode_of_transport FROM visits_df"""
         )
 
     # Insert anonymized trajectories into database
-    if anonymized_trajectories:
-        trajectories_df = pd.DataFrame(anonymized_trajectories)
+    if not trajectories_df.empty:
         con.sql(
             """INSERT INTO trajectory (uid, latitude, longitude, timestamp, trip_number, visit_number)
                  SELECT uid, latitude, longitude, timestamp, trip_number, visit_number FROM trajectories_df"""
@@ -360,11 +392,11 @@ def handle_raw_trajectories(coordenadas):
     print(f"Processed {len(trajectories_data)} trajectory points")
     print(f"Detected {len(visits_data)} visits")
     if visits_data:
-        max_visit = max(visit['visit_number'] for visit in visits_data)
+        max_visit = max(visit["visit_number"] for visit in visits_data)
         print(f"Total visits: {max_visit}")
 
 
-def classify_visits(visits_df):
+def classify_visits(visits_df, trajectories_df):
     if visits_df.empty:
         return visits_df
 
@@ -450,12 +482,62 @@ def classify_visits(visits_df):
         visits_df["purpose"] = "OTHER"
 
     # Set mode of transport (you can improve this later with additional models)
-    visits_df["mode_of_transport"] = "CAR"
+    visits_df = classify_transport_in_visits(visits_df, trajectories_df)
 
     # Drop temporary columns if you don't want to keep them
     visits_df = visits_df.drop(
         columns=["Bairro", "HOUR", "DAY_OF_WEEK"], errors="ignore"
     )
+
+    return visits_df
+
+
+def classify_transport_in_visits(visits_df, trajectories_df):
+    # Initialize mode_of_transport column
+    visits_df["mode_of_transport"] = "UNKNOWN"
+
+    # Get unique uid from visits
+    uid = visits_df["uid"].iloc[0] if not visits_df.empty else None
+
+    if uid is not None and not trajectories_df.empty:
+        # Filter trajectories for this uid
+        user_trajectories = trajectories_df[trajectories_df["uid"] == uid]
+
+        # Group by trip_number (movement between visits)
+        trip_groups = user_trajectories[
+            user_trajectories["trip_number"].notna()
+        ].groupby("trip_number")
+
+        for trip_num, trip_data in trip_groups:
+            if len(trip_data) < 2:
+                print(f"Skipping trip {trip_num}: not enough points")
+                continue
+
+            # Prepare data for transport mode prediction
+            trip_df = trip_data[["latitude", "longitude", "timestamp"]].copy()
+            trip_df = trip_df.rename(
+                columns={"latitude": "lat", "longitude": "lon", "timestamp": "time"}
+            )
+            trip_df = trip_df.sort_values("time")
+
+            try:
+                # Predict transport mode for this trip
+                transport_mode = predict_transport_mode(trip_df)
+
+                # Assign to the destination visit (trip goes TO visit N)
+                visit_mask = visits_df["visit_number"] == trip_num
+                if visit_mask.any():
+                    visits_df.loc[visit_mask, "mode_of_transport"] = (
+                        transport_mode.upper()
+                    )
+                    print(f"Assigned mode '{transport_mode}' to visit {trip_num}")
+
+            except Exception as e:
+                print(f"Error predicting transport mode for trip {trip_num}: {e}")
+                # Keep default "UNKNOWN"
+            print(
+                f"Mode of transport distribution: {visits_df['mode_of_transport'].value_counts().to_dict()}"
+            )
 
     return visits_df
 
