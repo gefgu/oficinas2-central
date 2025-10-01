@@ -24,7 +24,7 @@ class VisitData(BaseModel):
 
 class VisitItem(BaseModel):
     uid: int
-    trip_number: int
+    visit_number: int
     purpose: str
     mode_of_transport: str
 

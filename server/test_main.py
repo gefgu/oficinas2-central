@@ -85,6 +85,8 @@ def test_trajectories_receive_endpoint(test_db):
         visit["purpose"] = purpose_list[i % len(purpose_list)]
         visit["mode_of_transport"] = mode_list[i % len(mode_list)]
 
+    # print(response_data["visits"])
+
     response = client.put("/trajectories/", json={"visits": response_data["visits"]})
     assert response.status_code == 200
     assert response.json() == {"message": "Trajectory data updated successfully"}
@@ -92,7 +94,7 @@ def test_trajectories_receive_endpoint(test_db):
     # Use .df() to get a DataFrame that can be converted to dictionaries
     validated_trips_df = test_db.sql("""
         SELECT * FROM visit WHERE validated = TRUE
-        ORDER BY trip_number
+        ORDER BY visit_number
     """).df()
     
     # Convert to list of dictionaries

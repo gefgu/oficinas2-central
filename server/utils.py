@@ -164,6 +164,11 @@ def detect_visits_from_trajectory(coordenadas, uid, min_duration_minutes=10, mov
     """
     Detect visits from a trajectory based on staying at locations for a minimum duration.
     
+    Logic:
+    - If trajectory starts with a stay → Visit 1 (no trip number yet)
+    - Movement between visits → Trip N (from Visit N to Visit N+1)
+    - If trajectory ends with a stay → Final Visit
+    
     Args:
         coordenadas: List of (lat, lon, timestamp) tuples
         uid: User identifier
@@ -178,12 +183,14 @@ def detect_visits_from_trajectory(coordenadas, uid, min_duration_minutes=10, mov
     
     visits_data = []
     trajectories_data = []
-    trip_number = 1
+    visit_number = 1
+    current_trip_number = None  # No trip until we start moving between visits
     
     # Track visit state
     current_visit_start = None
     current_visit_location = None
-    current_visit_coords = []  # Store all coordinates during current visit
+    current_visit_coords = []
+    in_visit = False
     
     for i, (lat, lon, timestamp) in enumerate(coordenadas):
         # Convert timestamp if it's a string
@@ -198,7 +205,7 @@ def detect_visits_from_trajectory(coordenadas, uid, min_duration_minutes=10, mov
             )
             moved = distance > movement_threshold_meters
         
-        if moved:
+        if moved and in_visit:
             # User moved - close current visit if it meets duration requirement
             if current_visit_start and current_visit_location:
                 visit_duration = timestamp - current_visit_start
@@ -209,7 +216,7 @@ def detect_visits_from_trajectory(coordenadas, uid, min_duration_minutes=10, mov
                     
                     visits_data.append({
                         "uid": uid,
-                        "trip_number": trip_number,
+                        "visit_number": visit_number,
                         "arrive_time": current_visit_start,
                         "depart_time": timestamp,
                         "latitude": avg_lat,
@@ -218,31 +225,35 @@ def detect_visits_from_trajectory(coordenadas, uid, min_duration_minutes=10, mov
                         "mode_of_transport": None,
                     })
                     
-                    # Increment trip number for next trip
-                    trip_number += 1
+                    visit_number += 1
             
-            # Reset visit tracking since user is moving
+            # Reset visit tracking and start trip
             current_visit_start = None
             current_visit_location = None
             current_visit_coords = []
+            in_visit = False
+            current_trip_number = visit_number  # Trip TO the next visit
         
-        else:
-            # User didn't move significantly - start/continue visit
-            if not current_visit_start:
-                current_visit_start = timestamp
-                current_visit_location = (lat, lon)
-                current_visit_coords = [(lat, lon)]
-            else:
-                # Add to current visit coordinates
-                current_visit_coords.append((lat, lon))
+        elif not moved and not in_visit:
+            # User stopped moving - start potential visit
+            current_visit_start = timestamp
+            current_visit_location = (lat, lon)
+            current_visit_coords = [(lat, lon)]
+            in_visit = True
+            
+        elif not moved and in_visit:
+            # Continue current visit
+            current_visit_coords.append((lat, lon))
         
-        # Add all points to trajectory data with current trip number
+        # Add trajectory point with appropriate trip number
+        # Points during visits get None, points during movement get trip number
         trajectories_data.append({
             "uid": uid,
             "latitude": lat,
             "longitude": lon,
             "timestamp": timestamp,
-            "trip_number": trip_number,
+            "trip_number": current_trip_number if not in_visit else None,
+            "visit_number": visit_number if in_visit else None,
         })
     
     # Handle final visit if trajectory ends during a stay
@@ -261,7 +272,7 @@ def detect_visits_from_trajectory(coordenadas, uid, min_duration_minutes=10, mov
             
             visits_data.append({
                 "uid": uid,
-                "trip_number": trip_number,
+                "visit_number": visit_number,
                 "arrive_time": current_visit_start,
                 "depart_time": final_timestamp,
                 "latitude": avg_lat,
@@ -292,16 +303,16 @@ def handle_raw_trajectories(coordenadas):
         visits_df = pd.DataFrame(visits_data)
         visits_df = classify_visits(visits_df)
         con.sql(
-            """INSERT INTO visit (uid, trip_number, arrive_time, depart_time, latitude, longitude, purpose, mode_of_transport)
-                 SELECT uid, trip_number, arrive_time, depart_time, latitude, longitude, purpose, mode_of_transport FROM visits_df"""
+            """INSERT INTO visit (uid, visit_number, arrive_time, depart_time, latitude, longitude, purpose, mode_of_transport)
+                 SELECT uid, visit_number, arrive_time, depart_time, latitude, longitude, purpose, mode_of_transport FROM visits_df"""
         )
 
     # Insert anonymized trajectories into database
     if anonymized_trajectories:
         trajectories_df = pd.DataFrame(anonymized_trajectories)
         con.sql(
-            """INSERT INTO trajectory (uid, latitude, longitude, timestamp, trip_number)
-                 SELECT uid, latitude, longitude, timestamp, trip_number FROM trajectories_df"""
+            """INSERT INTO trajectory (uid, latitude, longitude, timestamp, trip_number, visit_number)
+                 SELECT uid, latitude, longitude, timestamp, trip_number, visit_number FROM trajectories_df"""
         )
         number_of_inserted = con.sql(
             f"SELECT COUNT(*) FROM trajectory WHERE uid = {uid}"
@@ -313,8 +324,8 @@ def handle_raw_trajectories(coordenadas):
     print(f"Processed {len(trajectories_data)} trajectory points")
     print(f"Detected {len(visits_data)} visits")
     if visits_data:
-        max_trip = max(visit['trip_number'] for visit in visits_data)
-        print(f"Total trips: {max_trip}")
+        max_visit = max(visit['visit_number'] for visit in visits_data)
+        print(f"Total visits: {max_visit}")
 
 
 def classify_visits(visits_df):
@@ -437,21 +448,21 @@ def get_recent_trajectory_data():
         if col in visits_df.columns:
             visits_df[col] = visits_df[col].dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    # Get unique combinations of uid and trip_number from recent visits
-    uid_trip_combinations = visits_df[["uid", "trip_number"]].drop_duplicates()
+    # Get unique combinations of uid and visit_number from recent visits
+    uid_trip_combinations = visits_df[["uid", "visit_number"]].drop_duplicates()
 
     # Get corresponding trajectories for these visits
     trajectories_data = []
 
     for _, row in uid_trip_combinations.iterrows():
         uid = int(row["uid"])  # Convert to Python int
-        trip_number = int(row["trip_number"])  # Convert to Python int
+        visit_number = int(row["visit_number"])  # Convert to Python int
 
-        # Get trajectory points for this specific uid and trip_number
+        # Get trajectory points for this specific uid and visit_number
         trajectory_query = con.sql(
             f"""
             SELECT * FROM trajectory
-            WHERE uid = {uid} AND trip_number = {trip_number}
+            WHERE uid = {uid} AND visit_number = {visit_number}
             ORDER BY timestamp ASC
         """
         )
@@ -470,10 +481,10 @@ def get_recent_trajectory_data():
                 )
 
             # Convert numeric columns to Python native types
-            numeric_columns = ["uid", "trip_number", "latitude", "longitude"]
+            numeric_columns = ["uid", "visit_number", "latitude", "longitude"]
             for col in numeric_columns:
                 if col in trajectory_df.columns:
-                    if col in ["uid", "trip_number"]:
+                    if col in ["uid", "visit_number"]:
                         trajectory_df[col] = trajectory_df[col].astype(int)
                     else:
                         trajectory_df[col] = trajectory_df[col].astype(float)
@@ -484,7 +495,7 @@ def get_recent_trajectory_data():
             trajectories_data.append(
                 {
                     "uid": uid,
-                    "trip_number": trip_number,
+                    "visit_number": visit_number,
                     "trajectory_points": trajectory_points,
                     "point_count": len(trajectory_points),
                 }
@@ -517,6 +528,6 @@ def update_visit_data(dados):
         SET purpose = '{visit.purpose}', 
         mode_of_transport = '{visit.mode_of_transport}', 
         validated = TRUE
-        WHERE uid = {visit.uid} AND trip_number = {visit.trip_number}
+        WHERE uid = {visit.uid} AND visit_number = {visit.visit_number}
         """
         )

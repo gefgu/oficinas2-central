@@ -10,6 +10,7 @@ def create_tables(con):
         longitude DOUBLE, 
         timestamp TIMESTAMP,
         trip_number INTEGER,
+        visit_number INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
@@ -18,7 +19,7 @@ def create_tables(con):
     CREATE TABLE
     visit (
         uid INTEGER, 
-        trip_number INTEGER,
+        visit_number INTEGER,
         arrive_time TIMESTAMP,
         depart_time TIMESTAMP,
         latitude DOUBLE,
