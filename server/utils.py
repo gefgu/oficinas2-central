@@ -56,6 +56,7 @@ def anonymize_trajectories(trajectories_data, visits_data):
     """
     Anonymize trajectory data by replacing points with random locations within H3 hexagons.
     Points that fall within the same H3 hexagon as visit locations are randomized within that hexagon.
+    Only keeps the first 30 and last 30 anonymized points for each visit to reduce storage.
     """
     if not trajectories_data or not visits_data:
         return trajectories_data
@@ -107,31 +108,66 @@ def anonymize_trajectories(trajectories_data, visits_data):
         predicate='within'
     )
 
+    # Group trajectory points by visit_number to handle each visit separately
+    visit_groups = {}
+    for i, trajectory in enumerate(trajectories_data):
+        visit_num = trajectory.get("visit_number")
+        if visit_num is not None:
+            if visit_num not in visit_groups:
+                visit_groups[visit_num] = []
+            visit_groups[visit_num].append((i, trajectory))
+
     # Process trajectories
     anonymized_trajectories = []
     anonymized_count = 0
+    skipped_middle_count = 0
 
     for i, trajectory in enumerate(trajectories_data):
         # Check if this trajectory point is in a visit hexagon
         if pd.notna(trajectory_in_visit_hexagons.iloc[i]['index_right']):
-            # This point is in a visit hexagon - anonymize it
-            hex_idx = int(trajectory_in_visit_hexagons.iloc[i]['index_right'])
-            hex_geometry = h3_gdf.iloc[hex_idx].geometry
+            visit_num = trajectory.get("visit_number")
+            
+            # Determine if this point should be kept (first 30 or last 30 of the visit)
+            should_keep = False
+            if visit_num is not None and visit_num in visit_groups:
+                visit_points = visit_groups[visit_num]
+                total_points = len(visit_points)
+                
+                # Find position of current point in this visit's sequence
+                position_in_visit = next(
+                    (idx for idx, (orig_idx, _) in enumerate(visit_points) if orig_idx == i),
+                    None
+                )
+                
+                if position_in_visit is not None:
+                    # Keep first 30 or last 30 points
+                    if position_in_visit < 30 or position_in_visit >= total_points - 30:
+                        should_keep = True
 
-            # Generate random point within this hexagon
-            new_lat, new_lon = generate_random_point_in_polygon(hex_geometry)
+            if should_keep:
+                # This point is in a visit hexagon and within first/last 30 - anonymize it
+                hex_idx = int(trajectory_in_visit_hexagons.iloc[i]['index_right'])
+                hex_geometry = h3_gdf.iloc[hex_idx].geometry
 
-            # Create anonymized trajectory point
-            anonymized_trajectory = trajectory.copy()
-            anonymized_trajectory["latitude"] = new_lat
-            anonymized_trajectory["longitude"] = new_lon
-            anonymized_trajectories.append(anonymized_trajectory)
-            anonymized_count += 1
+                # Generate random point within this hexagon
+                new_lat, new_lon = generate_random_point_in_polygon(hex_geometry)
+
+                # Create anonymized trajectory point
+                anonymized_trajectory = trajectory.copy()
+                anonymized_trajectory["latitude"] = new_lat
+                anonymized_trajectory["longitude"] = new_lon
+                anonymized_trajectories.append(anonymized_trajectory)
+                anonymized_count += 1
+            else:
+                # Skip middle points of visits
+                skipped_middle_count += 1
         else:
-            # Keep original point if not in a visit hexagon
+            # Keep original point if not in a visit hexagon (movement between visits)
             anonymized_trajectories.append(trajectory)
 
     print(f"Anonymized {anonymized_count} out of {len(trajectories_data)} trajectory points")
+    print(f"Skipped {skipped_middle_count} middle points from visits")
+    print(f"Kept {len(anonymized_trajectories)} total trajectory points")
     return anonymized_trajectories
 
 
