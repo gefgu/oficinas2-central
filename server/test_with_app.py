@@ -12,7 +12,7 @@ if __name__ == "__main__":
     # Set to development mode for testing
     os.environ['PRODUCTION_MODE'] = 'false'
     
-    sample_df = pd.read_csv("../dados/sample_detailed_trajectory_user_53308444.csv")
+    sample_df = pd.read_csv("../dados/sample_detailed_trajectory_user_53308444_2.csv")
     sample_data = sample_df[["lat", "lon", "timestamp"]].values.tolist()
     handle_raw_trajectories(sample_data)
 

@@ -53,7 +53,6 @@ def load_h3_hexagons():
 
 
 def anonymize_trajectories(trajectories_data, visits_data):
-    return trajectories_data
     """
     Anonymize trajectory data by replacing points with random locations within H3 hexagons.
     Points that fall within the same H3 hexagon as visit locations are randomized within that hexagon.
@@ -67,50 +66,72 @@ def anonymize_trajectories(trajectories_data, visits_data):
         print("Could not load H3 hexagons, returning original trajectories")
         return trajectories_data
 
-    # Find hexagons that contain visit locations
-    visit_hexagons = set()
-    for visit in visits_data:
-        visit_point = Point(visit["longitude"], visit["latitude"])
-        # Find which hexagon contains this visit
-        for idx, row in h3_gdf.iterrows():
-            if row.geometry.contains(visit_point):
-                visit_hexagons.add(idx)
-                break
+    # Ensure consistent CRS
+    if h3_gdf.crs is None:
+        h3_gdf = h3_gdf.set_crs("EPSG:4326")
+    elif h3_gdf.crs != "EPSG:4326":
+        h3_gdf = h3_gdf.to_crs("EPSG:4326")
 
-    print(f"Found {len(visit_hexagons)} hexagons containing visits")
+    # Create GeoDataFrame for visits
+    visits_gdf = gpd.GeoDataFrame(
+        visits_data,
+        geometry=[Point(visit["longitude"], visit["latitude"]) for visit in visits_data],
+        crs="EPSG:4326"
+    )
 
-    # Process each trajectory point
+    # Find hexagons that contain visit locations using spatial join
+    visit_hexagons_gdf = gpd.sjoin(visits_gdf, h3_gdf, how='inner', predicate='within')
+    visit_hexagon_indices = set(visit_hexagons_gdf.index_right.unique())
+
+    print(f"Found {len(visit_hexagon_indices)} hexagons containing visits")
+
+    if not visit_hexagon_indices:
+        print("No visit hexagons found, returning original trajectories")
+        return trajectories_data
+
+    # Create GeoDataFrame for trajectory points
+    trajectory_gdf = gpd.GeoDataFrame(
+        trajectories_data,
+        geometry=[Point(traj["longitude"], traj["latitude"]) for traj in trajectories_data],
+        crs="EPSG:4326"
+    )
+
+    # Get only the hexagons that contain visits for efficiency
+    visit_hexagons_subset = h3_gdf.iloc[list(visit_hexagon_indices)]
+
+    # Use spatial join to find which trajectory points are in visit hexagons
+    trajectory_in_visit_hexagons = gpd.sjoin(
+        trajectory_gdf, 
+        visit_hexagons_subset, 
+        how='left', 
+        predicate='within'
+    )
+
+    # Process trajectories
     anonymized_trajectories = []
     anonymized_count = 0
 
-    for trajectory in trajectories_data:
-        lat, lon = trajectory["latitude"], trajectory["longitude"]
-        traj_point = Point(lon, lat)
-
-        # Check if this point is in a hexagon that contains visits
-        point_anonymized = False
-        for hex_idx in visit_hexagons:
+    for i, trajectory in enumerate(trajectories_data):
+        # Check if this trajectory point is in a visit hexagon
+        if pd.notna(trajectory_in_visit_hexagons.iloc[i]['index_right']):
+            # This point is in a visit hexagon - anonymize it
+            hex_idx = int(trajectory_in_visit_hexagons.iloc[i]['index_right'])
             hex_geometry = h3_gdf.iloc[hex_idx].geometry
-            if hex_geometry.contains(traj_point):
-                # Generate random point within this hexagon
-                new_lat, new_lon = generate_random_point_in_polygon(hex_geometry)
 
-                # Create anonymized trajectory point
-                anonymized_trajectory = trajectory.copy()
-                anonymized_trajectory["latitude"] = new_lat
-                anonymized_trajectory["longitude"] = new_lon
-                anonymized_trajectories.append(anonymized_trajectory)
-                anonymized_count += 1
-                point_anonymized = True
-                break
+            # Generate random point within this hexagon
+            new_lat, new_lon = generate_random_point_in_polygon(hex_geometry)
 
-        if not point_anonymized:
+            # Create anonymized trajectory point
+            anonymized_trajectory = trajectory.copy()
+            anonymized_trajectory["latitude"] = new_lat
+            anonymized_trajectory["longitude"] = new_lon
+            anonymized_trajectories.append(anonymized_trajectory)
+            anonymized_count += 1
+        else:
             # Keep original point if not in a visit hexagon
             anonymized_trajectories.append(trajectory)
 
-    print(
-        f"Anonymized {anonymized_count} out of {len(trajectories_data)} trajectory points"
-    )
+    print(f"Anonymized {anonymized_count} out of {len(trajectories_data)} trajectory points")
     return anonymized_trajectories
 
 
@@ -125,7 +146,7 @@ def generate_random_point_in_polygon(polygon_geometry):
 
     # Generate random point within bounding box that falls inside polygon
     max_attempts = 100
-    for _ in range(max_attempts):
+    for attempt in range(max_attempts):
         random_lat = random.uniform(min_lat, max_lat)
         random_lon = random.uniform(min_lon, max_lon)
         point = Point(random_lon, random_lat)
@@ -134,6 +155,7 @@ def generate_random_point_in_polygon(polygon_geometry):
             return random_lat, random_lon
 
     # Fallback to centroid if no valid point found
+    print(f"Warning: Could not find random point in polygon after {max_attempts} attempts, using centroid")
     centroid = polygon_geometry.centroid
     return centroid.y, centroid.x
 
