@@ -12,7 +12,7 @@ def create_tables(con):
         trip_number INTEGER,
         visit_number INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
+        )     
     """)
 
     con.execute("""
