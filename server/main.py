@@ -62,5 +62,8 @@ async def update_trajectory_data(dados: VisitData):
     return {"message": "Trajectory data updated successfully"}
 
 if __name__ == "__main__":
+    # Note: For development, it's recommended to run with uvicorn directly for auto-reload:
+    # python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+    # This allows the server to automatically restart when code changes are detected.
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
