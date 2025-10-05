@@ -221,14 +221,15 @@ def generate_random_point_in_polygon(polygon_geometry):
     centroid = polygon_geometry.centroid
     return centroid.y, centroid.x
 
-def identify_stationary_points(trajectory_gdf, eps_meters=100, min_samples=60):
+def identify_stationary_points(trajectory_gdf, eps_meters=100, min_samples=60, temporal_eps_minutes=15):
     """
-    Use DBSCAN to identify stationary points vs trajectory points.
+    Use spatio-temporal DBSCAN to identify stationary points vs trajectory points.
     
     Parameters:
     - trajectory_gdf: GeoDataFrame with trajectory points
-    - eps_meters: maximum distance (in meters) between points in a cluster
+    - eps_meters: maximum spatial distance (in meters) between points in a cluster
     - min_samples: minimum number of points to form a stationary cluster
+    - temporal_eps_minutes: maximum temporal gap (in minutes) to separate visits
     
     Returns:
     - GeoDataFrame with additional columns: 'cluster', 'is_stationary', 'stationary_label'
@@ -236,21 +237,35 @@ def identify_stationary_points(trajectory_gdf, eps_meters=100, min_samples=60):
     # Convert to a projected CRS for distance calculations in meters
     gdf_projected = trajectory_gdf.to_crs(epsg=3857)
     
-    # Extract coordinates for clustering
-    coords = np.column_stack([gdf_projected.geometry.x, gdf_projected.geometry.y])
+    # Extract spatial coordinates
+    spatial_coords = np.column_stack([gdf_projected.geometry.x, gdf_projected.geometry.y])
     
-    # Apply DBSCAN
-    dbscan = DBSCAN(eps=eps_meters, min_samples=min_samples, metric='euclidean')
+    # Convert timestamps to seconds since first point
+    timestamps = (trajectory_gdf['timestamp'] - trajectory_gdf['timestamp'].min()).dt.total_seconds()
+    
+    # Scale temporal dimension to match spatial importance
+    # 1 minute = 60 seconds = 60 meters equivalent (adjust this ratio as needed)
+    temporal_scale = 60  # seconds per equivalent meter
+    temporal_coords = (timestamps / temporal_scale).values.reshape(-1, 1)
+    
+    # Combine spatial and temporal coordinates
+    # This creates 3D space: (X_meters, Y_meters, Time_scaled)
+    coords = np.column_stack([spatial_coords, temporal_coords])
+    
+    # Calculate appropriate eps for 3D space
+    # Use Euclidean distance: sqrt(dx² + dy² + dt²)
+    # For points to cluster: spatial_dist <= eps_meters AND temporal_gap <= temporal_eps_minutes
+    temporal_eps_scaled = (temporal_eps_minutes * 60) / temporal_scale  # minutes to scaled units
+    eps_3d = np.sqrt(eps_meters**2 + temporal_eps_scaled**2)
+    
+    # Apply DBSCAN in 3D space
+    dbscan = DBSCAN(eps=eps_3d, min_samples=min_samples, metric='euclidean')
     clusters = dbscan.fit_predict(coords)
     
     # Add cluster labels to dataframe
     result_gdf = trajectory_gdf.copy()
     result_gdf['cluster'] = clusters
-    
-    # Mark stationary points (clusters != -1) and trajectory points (cluster == -1)
     result_gdf['is_stationary'] = result_gdf['cluster'] != -1
-    
-    # Create readable labels
     result_gdf['stationary_label'] = result_gdf.apply(
         lambda row: f"Stationary_{row['cluster']}" if row['is_stationary'] else "Trajectory",
         axis=1
@@ -261,7 +276,10 @@ def identify_stationary_points(trajectory_gdf, eps_meters=100, min_samples=60):
     n_trajectory = (~result_gdf['is_stationary']).sum()
     n_clusters = len(set(clusters)) - (1 if -1 in clusters else 0)
     
-    print(f"DBSCAN Results:")
+    print(f"Spatio-Temporal DBSCAN Results:")
+    print(f"- Temporal separation threshold: {temporal_eps_minutes} minutes")
+    print(f"- Spatial threshold: {eps_meters}m, Temporal scale: {temporal_scale}s/meter-equiv")
+    print(f"- Combined 3D epsilon: {eps_3d:.1f}")
     print(f"- Total points: {len(result_gdf)}")
     print(f"- Stationary points: {n_stationary} ({n_stationary/len(result_gdf)*100:.1f}%)")
     print(f"- Trajectory points: {n_trajectory} ({n_trajectory/len(result_gdf)*100:.1f}%)")
@@ -441,7 +459,7 @@ def detect_visits_from_trajectory(
                     # Check if between this visit and next
                     next_arrive = sorted_visits[i + 1][1][0]
                     if depart_time <= timestamp < next_arrive:
-                        trip_num = i + 2  # Trip to next visit
+                        trip_num = i + 2 # Trip to next visit
                         break
             
             # If after all visits, assign trip number after last visit
