@@ -1,3 +1,4 @@
+import json
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Tuple
@@ -34,14 +35,21 @@ async def root():
     return {"message": "Hello World! FastAPI is running!"}
 
 @app.post("/")
-async def root(message):
+async def root(message: List[dict]):
     print(message)
     return {"message": "Hello World! FastAPI is running!"}
 
 @app.post("/trajectories/")
-async def receive_trajectory_data(data: ESPData):
-    handle_raw_trajectories(data.coordenadas)
-    return {"coordenadas": data.coordenadas}
+async def receive_trajectory_data(data: List[dict]):
+    coordenadas = [
+        (point['latitude'], point['longitude'], point['timestamp'])
+        for point in data
+    ]
+
+    print(f"Quantidade de Pontos Recebidos: {len(coordenadas)}")
+
+    handle_raw_trajectories(coordenadas)
+    return {"coordenadas": coordenadas}
 
 @app.get("/trajectories/")
 async def get_trajectory_data():
@@ -50,10 +58,14 @@ async def get_trajectory_data():
     if len(visits_data) < 1 or len(trajectory_data) < 1:
         return {"detail": "Not authorized"}
     
-    return {
+    response = {
         "visits": visits_data,
         "trajectory": trajectory_data
     }
+
+    json.dump(response, open("latest_trajectory_data.json", "w"), indent=4, ensure_ascii=False)
+
+    return response
 
 @app.put("/trajectories/")
 async def update_trajectory_data(dados: VisitData):

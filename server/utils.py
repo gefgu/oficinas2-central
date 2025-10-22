@@ -692,11 +692,26 @@ def classify_transport_in_visits(visits_df, trajectories_df):
 def get_recent_trajectory_data():
     con = get_db()
 
-    # Get recent visits
-    recent_visits = con.sql(
+    # Get the most recent uid with unvalidated visits
+    most_recent_uid_query = con.sql(
         """
+        SELECT uid FROM visit
+        WHERE validated = FALSE
+        ORDER BY created_at DESC
+        LIMIT 1
+    """
+    )
+
+    if most_recent_uid_query.df().empty:
+        return [], []
+
+    most_recent_uid = most_recent_uid_query.df()["uid"].iloc[0]
+
+    # Get all unvalidated visits for this uid
+    recent_visits = con.sql(
+        f"""
         SELECT * FROM visit
-        WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '10 minutes'
+        WHERE uid = {most_recent_uid}
         AND validated = FALSE
         ORDER BY created_at DESC
     """
@@ -713,8 +728,8 @@ def get_recent_trajectory_data():
         if col in visits_df.columns:
             visits_df[col] = visits_df[col].dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    # Get unique uid values from recent visits
-    unique_uids = visits_df["uid"].unique()
+    # Use only the most recent uid
+    unique_uids = [int(most_recent_uid)]
 
     # Get corresponding trajectories for these visits
     trajectories_data = []
