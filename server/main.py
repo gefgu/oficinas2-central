@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import List, Tuple
 import duckdb
 import pandas as pd
+from fastapi.middleware.cors import CORSMiddleware
 
 # When running as module vs directly
 try:
@@ -15,6 +16,14 @@ except ImportError:
 
 # Create FastAPI instance
 app = FastAPI(title="Simple FastAPI Server", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Or specify your app's origin(s)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Define a model for the ESP data
 class ESPData(BaseModel):
