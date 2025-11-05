@@ -50,10 +50,82 @@ def load_h3_hexagons():
     """Load H3 hexagons from the GeoJSON file"""
     try:
         h3_gdf = gpd.read_file("../dados/Curitiba_resolution_10.geojson")
+        h3_colombo = gpd.read_file("../dados/Colombo_resolution_10.geojson")
+        h3_gdf = pd.concat([h3_gdf, h3_colombo], ignore_index=True)
         return h3_gdf
     except FileNotFoundError:
         print("H3 hexagons file not found at ../dados/Curitiba_resolution_10.geojson")
         return None
+
+
+def anonymize_visit_locations(visits_data):
+    """
+    Anonymize visit locations by randomizing them within their containing H3 hexagons.
+    This prevents revealing exact home/work addresses while preserving neighborhood-level accuracy.
+    
+    Args:
+        visits_data: List of visit dictionaries with latitude/longitude
+        
+    Returns:
+        List of visits with anonymized coordinates
+    """
+    if not visits_data:
+        return visits_data
+    
+    # Load H3 hexagons
+    h3_gdf = load_h3_hexagons()
+    if h3_gdf is None:
+        print("Could not load H3 hexagons, returning original visit locations")
+        return visits_data
+    
+    # Ensure consistent CRS
+    if h3_gdf.crs is None:
+        h3_gdf = h3_gdf.set_crs("EPSG:4326")
+    elif h3_gdf.crs != "EPSG:4326":
+        h3_gdf = h3_gdf.to_crs("EPSG:4326")
+    
+    # Create GeoDataFrame for visits
+    visits_gdf = gpd.GeoDataFrame(
+        visits_data,
+        geometry=[Point(v["longitude"], v["latitude"]) for v in visits_data],
+        crs="EPSG:4326"
+    )
+    
+    # Find which hexagon contains each visit
+    visits_with_hex = gpd.sjoin(visits_gdf, h3_gdf, how="left", predicate="within")
+    
+    anonymized_visits = []
+    anonymized_count = 0
+    outside_hexagon_count = 0
+    
+    for i, visit in enumerate(visits_data):
+        visit_copy = visit.copy()
+        
+        if pd.notna(visits_with_hex.iloc[i].get("index_right")):
+            # Visit is in a hexagon - randomize within it
+            hex_idx = int(visits_with_hex.iloc[i]["index_right"])
+            hex_geometry = h3_gdf.iloc[hex_idx].geometry
+            
+            new_lat, new_lon = generate_random_point_in_polygon(hex_geometry)
+            
+            print(f"Anonymized visit {visit['visit_number']}: "
+                  f"({visit['latitude']:.6f}, {visit['longitude']:.6f}) → "
+                  f"({new_lat:.6f}, {new_lon:.6f})")
+            
+            visit_copy["latitude"] = new_lat
+            visit_copy["longitude"] = new_lon
+            anonymized_count += 1
+        else:
+            # Outside hexagon coverage - keep original (e.g., visits outside Curitiba/Colombo)
+            outside_hexagon_count += 1
+            print(f"Visit {visit['visit_number']} outside H3 coverage, keeping original location")
+        
+        anonymized_visits.append(visit_copy)
+    
+    print(f"Anonymized {anonymized_count} visit locations")
+    print(f"Kept {outside_hexagon_count} visits outside H3 coverage")
+    
+    return anonymized_visits
 
 
 def anonymize_trajectories(trajectories_data, visits_data):
@@ -298,7 +370,7 @@ def identify_stationary_points(trajectory_gdf, eps_meters=100, min_samples=60, t
 
 
 def detect_visits_from_trajectory(
-    coordenadas, uid, min_duration_minutes=10, eps_meters=100, min_samples=60
+    coordenadas, uid, min_duration_minutes=3, eps_meters=50, min_samples=5
 ):
     """
     Detect visits from a trajectory using DBSCAN clustering to identify stationary points.
@@ -506,17 +578,21 @@ def handle_raw_trajectories(coordenadas):
     # Use the new visit detection function
     visits_data, trajectories_data = detect_visits_from_trajectory(coordenadas, uid)
 
-    # Anonymize trajectories before inserting into database
-    anonymized_trajectories = anonymize_trajectories(trajectories_data, visits_data)
+    # Anonymize BOTH visit locations and trajectories before inserting into database
+    print("\n=== Anonymizing Visit Locations ===")
+    anonymized_visits = anonymize_visit_locations(visits_data)
+    
+    print("\n=== Anonymizing Trajectory Points ===")
+    anonymized_trajectories = anonymize_trajectories(trajectories_data, anonymized_visits)
     trajectories_df = (
         pd.DataFrame(anonymized_trajectories)
         if anonymized_trajectories
         else pd.DataFrame()
     )
 
-    # Insert visits into database
-    if visits_data:
-        visits_df = pd.DataFrame(visits_data)
+    # Insert anonymized visits into database
+    if anonymized_visits:
+        visits_df = pd.DataFrame(anonymized_visits)
         visits_df = classify_visits(visits_df, trajectories_df)
         con.sql(
             """INSERT INTO visit (uid, visit_number, arrive_time, depart_time, latitude, longitude, purpose, mode_of_transport)

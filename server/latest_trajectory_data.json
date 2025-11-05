@@ -1,0 +1,270 @@
+{
+    "visits": [
+        {
+            "uid": 1,
+            "visit_number": 1,
+            "arrive_time": "2025-10-29 03:30:05",
+            "depart_time": "2025-10-29 03:38:20",
+            "latitude": -25.346993793305018,
+            "longitude": -49.205010548088055,
+            "purpose": "WORK",
+            "mode_of_transport": "UNKNOWN",
+            "validated": false,
+            "created_at": "2025-10-29 11:31:25"
+        }
+    ],
+    "trajectory": [
+        {
+            "uid": 1,
+            "trip_number": 2,
+            "trajectory_points": [
+                {
+                    "uid": 1,
+                    "latitude": -25.34575235357104,
+                    "longitude": -49.20454884455758,
+                    "timestamp": "2025-10-29 03:31:05",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34541298998416,
+                    "longitude": -49.2042806236666,
+                    "timestamp": "2025-10-29 03:31:20",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.345270527583654,
+                    "longitude": -49.20418162386983,
+                    "timestamp": "2025-10-29 03:31:35",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34507076816666,
+                    "longitude": -49.20404178535869,
+                    "timestamp": "2025-10-29 03:31:50",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34476501330313,
+                    "longitude": -49.20408238363096,
+                    "timestamp": "2025-10-29 03:32:05",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34411273370987,
+                    "longitude": -49.204159069266105,
+                    "timestamp": "2025-10-29 03:32:20",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.343615368141364,
+                    "longitude": -49.20450641009845,
+                    "timestamp": "2025-10-29 03:32:35",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.343203613144347,
+                    "longitude": -49.20478157620103,
+                    "timestamp": "2025-10-29 03:32:50",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.343203613144347,
+                    "longitude": -49.20478157620103,
+                    "timestamp": "2025-10-29 03:33:05",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.343203613144347,
+                    "longitude": -49.20451092101816,
+                    "timestamp": "2025-10-29 03:33:20",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.343264764965213,
+                    "longitude": -49.20330199453474,
+                    "timestamp": "2025-10-29 03:33:35",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.343303987408596,
+                    "longitude": -49.20182373821707,
+                    "timestamp": "2025-10-29 03:33:50",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.343900307474424,
+                    "longitude": -49.20105126205108,
+                    "timestamp": "2025-10-29 03:34:05",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34432209306315,
+                    "longitude": -49.20049872701567,
+                    "timestamp": "2025-10-29 03:34:20",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34519389101708,
+                    "longitude": -49.19999495852054,
+                    "timestamp": "2025-10-29 03:34:35",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34606653989748,
+                    "longitude": -49.19914738050506,
+                    "timestamp": "2025-10-29 03:34:50",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34606653989748,
+                    "longitude": -49.19926539769708,
+                    "timestamp": "2025-10-29 03:35:05",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34606653989748,
+                    "longitude": -49.19914738050506,
+                    "timestamp": "2025-10-29 03:35:20",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34659012622553,
+                    "longitude": -49.19924394004433,
+                    "timestamp": "2025-10-29 03:35:35",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.347385197393788,
+                    "longitude": -49.19969455114116,
+                    "timestamp": "2025-10-29 03:35:50",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.348122087956185,
+                    "longitude": -49.20131460532263,
+                    "timestamp": "2025-10-29 03:36:05",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.348257830464828,
+                    "longitude": -49.20203343731044,
+                    "timestamp": "2025-10-29 03:36:20",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34820935101494,
+                    "longitude": -49.203181422723794,
+                    "timestamp": "2025-10-29 03:36:35",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34843235632352,
+                    "longitude": -49.203975356561074,
+                    "timestamp": "2025-10-29 03:36:50",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34843235632352,
+                    "longitude": -49.203975356561074,
+                    "timestamp": "2025-10-29 03:37:05",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34790877799193,
+                    "longitude": -49.20425430628769,
+                    "timestamp": "2025-10-29 03:37:20",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                },
+                {
+                    "uid": 1,
+                    "latitude": -25.34727854180889,
+                    "longitude": -49.20543447820796,
+                    "timestamp": "2025-10-29 03:37:35",
+                    "trip_number": 2,
+                    "visit_number": null,
+                    "created_at": "2025-10-29 11:31:25"
+                }
+            ],
+            "point_count": 27,
+            "start_time": "2025-10-29 03:31:05",
+            "end_time": "2025-10-29 03:37:35"
+        }
+    ]
+}

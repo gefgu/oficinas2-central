@@ -55,8 +55,8 @@ async def receive_trajectory_data(data: List[dict]):
 async def get_trajectory_data():
     visits_data, trajectory_data = get_recent_trajectory_data()
     
-    if len(visits_data) < 1 or len(trajectory_data) < 1:
-        return {"detail": "Not authorized"}
+    # if len(visits_data) < 1 or len(trajectory_data) < 1:
+    #     return {"detail": "Not authorized"}
     
     response = {
         "visits": visits_data,
